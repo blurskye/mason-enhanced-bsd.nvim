@@ -228,13 +228,10 @@ M.cached_features = {
     ["nvim-0.11"] = vim.fn.has "nvim-0.11" == 1,
 }
 
--- When on FreeBSD with working linuxlator, enable Linux compatibility more forcefully
+-- When on FreeBSD with working linuxlator, enable Linux compatibility
 if M.cached_features.freebsd and M.cached_features.linuxlator_working then
     -- Force Linux compatibility for FreeBSD with linuxlator
     M.cached_features.linux = true
-    
-    -- Override the regular OS detection
-    uname.sysname = "FreeBSD+Linux"
     
     print("\n======== MASON-BSD-DEBUG: FreeBSD with working linuxlator detected ========")
     print("LINUX PACKAGES WILL BE SUPPORTED ON THIS FREEBSD SYSTEM")
@@ -245,33 +242,6 @@ elseif M.cached_features.freebsd then
     print("ONLY NATIVE BSD PACKAGES WILL BE SUPPORTED ON THIS SYSTEM")
     print("INSTALL LINUXLATOR FOR BROADER PACKAGE SUPPORT")
     print("===================================================================\n")
-end
-
--- HARD OVERRIDE: Directly modify the `is` table to ALWAYS accept Linux targets on FreeBSD with linuxlator
--- This avoids relying on the metamethod which might be inconsistently applied
-if M.cached_features.freebsd and M.cached_features.linuxlator_working then
-    -- Create direct global override - this is a heavy hammer but will ensure compatibility
-    print("\n======== MASON-BSD-DEBUG: APPLYING DIRECT PLATFORM OVERRIDE ========")
-    -- Force Linux compatibility
-    M.cached_features.linux = true
-    
-    -- Create and apply direct platform compatibility overrides
-    local linux_targets = {
-        "linux", "linux_x64", "linux_arm64", "linux_x86",
-        "linux_x64_gnu", "linux_x64_musl", "linux_arm64_gnu", "linux_arm64_musl"
-    }
-    
-    -- Force all Linux targets to be true directly
-    for _, target in ipairs(linux_targets) do
-        if not arch or target:match(M.arch) or not target:match("_") then
-            -- Raw direct assignment to bypass all detection logic
-            print("MASON-BSD-DEBUG: Forcing compatibility with " .. target)
-            M.is[target] = true
-        end
-    end
-    
-    print("MASON-BSD-DEBUG: FreeBSD+linuxlator direct platform patching complete")
-    print("=========================================================")
 end
 
 -----------------------------------------------------------------------
@@ -343,6 +313,35 @@ M.is = setmetatable({}, {
         return true
     end,
 })
+
+-- ONLY NOW that M.is exists, we can apply direct overrides
+if M.cached_features.freebsd and M.cached_features.linuxlator_working then
+    -- Create direct global override - this is a heavy hammer but will ensure compatibility
+    print("\n======== MASON-BSD-DEBUG: APPLYING DIRECT PLATFORM OVERRIDE ========")
+    
+    -- Create and apply direct platform compatibility overrides
+    local linux_targets = {
+        "linux", "linux_x64", "linux_arm64", "linux_x86",
+        "linux_x64_gnu", "linux_x64_musl", "linux_arm64_gnu", "linux_arm64_musl"
+    }
+    
+    -- Force all Linux targets to be true directly
+    for _, target in ipairs(linux_targets) do
+        -- We use rawset to avoid the metatable __index function
+        -- This ensures we're not causing an infinite loop
+        if target:match("^linux") then
+            -- Filter by architecture
+            local target_arch = target:match("_(%w+)")
+            if not target_arch or target_arch == M.arch then
+                print("MASON-BSD-DEBUG: Forcing compatibility with " .. target)
+                rawset(M.is, target, true)
+            end
+        end
+    end
+    
+    print("MASON-BSD-DEBUG: FreeBSD+linuxlator direct platform patching complete")
+    print("=========================================================")
+end
 
 -----------------------------------------------------------------------
 -- Platform selection for commands
