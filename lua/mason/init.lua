@@ -4,6 +4,12 @@ local settings = require "mason.settings"
 
 local M = {}
 
+-- Load BSD compatibility module as early as possible
+if platform.cached_features and platform.cached_features.freebsd then
+    local bsd_compat = require "mason-bsd-compat"
+    bsd_compat.setup()
+end
+
 local function setup_autocmds()
     vim.api.nvim_create_autocmd("VimLeavePre", {
         callback = function()

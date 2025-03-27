@@ -7,6 +7,13 @@ local link = require "mason-core.installer.registry.link"
 local log = require "mason-core.log"
 local schemas = require "mason-core.installer.registry.schemas"
 local util = require "mason-core.installer.registry.util"
+local platform = require "mason-core.platform"
+
+-- Load our platform override early
+if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+    require "mason-core.installer.registry.platform_override"
+    log.debug("MASON-BSD-DEBUG: Loaded platform override for FreeBSD with linuxlator")
+end
 
 local M = {}
 

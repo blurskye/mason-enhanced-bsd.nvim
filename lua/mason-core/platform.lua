@@ -228,9 +228,14 @@ M.cached_features = {
     ["nvim-0.11"] = vim.fn.has "nvim-0.11" == 1,
 }
 
--- When on FreeBSD with working linuxlator, enable Linux compatibility
+-- When on FreeBSD with working linuxlator, enable Linux compatibility more forcefully
 if M.cached_features.freebsd and M.cached_features.linuxlator_working then
+    -- Force Linux compatibility for FreeBSD with linuxlator
     M.cached_features.linux = true
+    
+    -- Override the regular OS detection
+    uname.sysname = "FreeBSD+Linux"
+    
     print("\n======== MASON-BSD-DEBUG: FreeBSD with working linuxlator detected ========")
     print("LINUX PACKAGES WILL BE SUPPORTED ON THIS FREEBSD SYSTEM")
     print("NATIVE BSD PACKAGES WILL BE PREFERRED WHEN AVAILABLE")
@@ -277,16 +282,27 @@ M.is = setmetatable({}, {
     __index = function(__, key)
         local os, arch, env = unpack(vim.split(key, "_", { plain = true }))
         
-        -- Special case for FreeBSD with linuxlator - allow Linux targets
-        if os == "linux" and uname.sysname == "FreeBSD" and M.cached_features.linuxlator_working then
+        -- Special case: FreeBSD with linuxlator - ALWAYS allow Linux targets
+        -- regardless of the specific error or context
+        if os == "linux" and M.cached_features.freebsd and M.cached_features.linuxlator_working then
             if arch and arch ~= M.arch then
                 return false
             end
-            -- For Linux targets on FreeBSD with linuxlator, be lenient with env requirements
+            -- For Linux targets on FreeBSD with linuxlator, we're always compatible
+            log.debug("MASON-BSD-DEBUG: FreeBSD with linuxlator allowing Linux target: " .. key)
             return true
         end
         
-        -- Normal platform check
+        -- Special case for FreeBSD
+        if os == "freebsd" and M.cached_features.freebsd then
+            if arch and arch ~= M.arch then
+                return false
+            end
+            -- For FreeBSD targets on FreeBSD, we're always compatible
+            return true
+        end
+        
+        -- Normal platform check for all other cases
         if not M.cached_features[os] or M.cached_features[os] ~= true then
             return false
         end

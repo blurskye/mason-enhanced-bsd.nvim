@@ -14,30 +14,48 @@ function M.setup()
     
     log.info("MASON-BSD-DEBUG: Initializing FreeBSD compatibility patches")
     
-    -- Load our patched providers
-    require "mason-core.installer.registry.providers.github.release"
-    require "mason-core.installer.registry.providers.init"
-    
-    -- Add FreeBSD to settings.lua registry
-    local settings = require "mason.settings"
-    
-    -- Add a registry for FreeBSD packages if one exists
-    if platform.cached_features.freebsd then
-        log.info("MASON-BSD-DEBUG: Adding FreeBSD package registry")
-        
-        -- You can uncomment and customize this to add a FreeBSD-specific registry
-        -- if you create one in the future
-        -- table.insert(settings.current.registries, 1, "github:your-username/mason-freebsd-registry")
+    -- Load our platform override first - this is critical
+    if platform.cached_features.linuxlator_working then
+        package.loaded["mason-core.installer.registry.platform_override"] = nil
+        require "mason-core.installer.registry.platform_override"
+        log.info("MASON-BSD-DEBUG: Applied platform override for FreeBSD + linuxlator")
     end
     
-    log.info("MASON-BSD-DEBUG: FreeBSD compatibility patches applied successfully")
+    -- Load our patched providers
+    package.loaded["mason-core.installer.registry.providers.github.release"] = nil
+    require "mason-core.installer.registry.providers.github.release"
     
-    -- Report status
+    package.loaded["mason-core.installer.registry.providers.init"] = nil
+    require "mason-core.installer.registry.providers.init"
+    
+    -- Add FreeBSD to settings.lua registry if needed
+    local settings = require "mason.settings"
+    
+    -- Report status and confirm patching
     if platform.cached_features.linuxlator_working then
         log.info("MASON-BSD-DEBUG: FreeBSD with linuxlator enabled - will support both FreeBSD and Linux packages")
+        -- Force Linux mode to be enabled regardless of other checks
+        platform.cached_features.linux = true
+        
+        -- Apply a monkey patch to force platform.is to report linux=true
+        local mt = getmetatable(platform.is)
+        local original_index = mt.__index
+        mt.__index = function(t, k)
+            -- Special override for linux targets on FreeBSD+linuxlator
+            if k:match("^linux") and platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+                local parts = vim.split(k, "_", { plain = true })
+                local arch = parts[2]
+                if not arch or arch == platform.arch then
+                    return true
+                end
+            end
+            return original_index(t, k)
+        end
     else
         log.info("MASON-BSD-DEBUG: FreeBSD without linuxlator - will only support FreeBSD packages")
     end
+    
+    log.info("MASON-BSD-DEBUG: FreeBSD compatibility patches applied successfully")
 end
 
 return M
