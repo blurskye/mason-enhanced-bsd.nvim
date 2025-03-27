@@ -34,4 +34,19 @@ function M.setup(config)
     M.has_setup = true
 end
 
+-- Store the original setup function
+local original_setup = M.setup
+
+-- Override the setup function to include our FreeBSD compatibility patches
+function M.setup(opts)
+    -- Load and apply FreeBSD compatibility patches
+    local bsd_compat = require "mason-bsd-compat"
+    bsd_compat.setup()
+    
+    -- Call the original setup function with the provided options
+    if original_setup then
+        return original_setup(opts)
+    end
+end
+
 return M
