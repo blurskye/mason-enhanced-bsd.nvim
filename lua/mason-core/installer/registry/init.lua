@@ -114,6 +114,14 @@ end
 ---@param spec RegistryPackageSpec
 ---@param opts PackageInstallOpts
 function M.parse(spec, opts)
+    -- DIRECT OVERRIDE: Immediately modify opts for FreeBSD+linuxlator before parsing
+    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working and not opts.target then
+        -- Force Linux target for FreeBSD+linuxlator
+        log.info("MASON-BSD-DEBUG: Forcing Linux target for FreeBSD+linuxlator in registry parse")
+        opts = opts or {}
+        opts.target = "linux_" .. platform.arch
+    end
+
     log.trace("Parsing spec", spec.name, opts)
     return Result.try(function(try)
         if not M.SCHEMA_CAP[spec.schema] then
@@ -153,6 +161,13 @@ end
 ---@param spec RegistryPackageSpec
 ---@param opts PackageInstallOpts
 function M.compile(spec, opts)
+    -- DIRECT OVERRIDE: Force Linux targets on FreeBSD with linuxlator
+    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+        log.info("MASON-BSD-DEBUG: Forcing Linux target for FreeBSD+linuxlator in compile")
+        opts = opts or {}
+        opts.target = "linux_" .. platform.arch
+    end
+
     log.debug("Compiling installer.", spec.name, opts)
     return Result.try(function(try)
         -- Parsers run synchronously and may access API functions, so we schedule before-hand.
