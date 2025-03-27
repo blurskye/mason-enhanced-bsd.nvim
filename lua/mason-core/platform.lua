@@ -21,6 +21,8 @@ local uname = vim.loop.os_uname()
 ---| '"win_arm64"'
 ---| '"win_x64"'
 ---| '"win_x86"'
+---| '"freebsd_x64"'
+---| '"freebsd_arm64"'
 
 local arch_aliases = {
     ["x86_64"] = "x64",
@@ -64,6 +66,30 @@ local get_libc = _.lazy(function()
     end
 end)
 
+-- Check if linuxlator is available and working on FreeBSD
+---@type fun(): boolean
+local is_linuxlator_working = _.lazy(function()
+    if uname.sysname ~= "FreeBSD" then
+        return false
+    end
+    
+    -- Check if linux.ko module is loaded
+    local kldstat_ok, kldstat_output = system { "kldstat", "-n", "linux.ko" }
+    if not kldstat_ok then
+        return false
+    end
+    
+    -- Check if linux-el9 is installed (or any linux compat)
+    local linux_root_exists = vim.fn.isdirectory("/compat/linux")
+    if not linux_root_exists then
+        return false
+    end
+    
+    -- Try to run a simple Linux binary to verify
+    local test_ok = system { "/compat/linux/bin/true" }
+    return test_ok
+end)
+
 -- Most of the code that calls into these functions executes outside of the main event loop, where API/fn functions are
 -- disabled. We evaluate these immediately here to avoid issues with main loop synchronization.
 M.cached_features = {
@@ -74,8 +100,14 @@ M.cached_features = {
     ["darwin"] = vim.fn.has "mac",
     ["unix"] = vim.fn.has "unix",
     ["linux"] = vim.fn.has "linux",
+    ["freebsd"] = uname.sysname == "FreeBSD",
     ["nvim-0.11"] = vim.fn.has "nvim-0.11",
 }
+
+-- If we're on FreeBSD with working linuxlator, consider Linux features available
+if M.cached_features.freebsd and is_linuxlator_working() then
+    M.cached_features.linux = 1
+end
 
 ---@type fun(env: string): boolean
 local check_env = _.memoize(_.cond {
@@ -92,6 +124,7 @@ local check_env = _.memoize(_.cond {
         end,
     },
     { _.equals "openbsd", _.always(uname.sysname == "OpenBSD") },
+    { _.equals "freebsd", _.always(uname.sysname == "FreeBSD") },
     { _.T, _.F },
 })
 
@@ -105,6 +138,18 @@ local check_env = _.memoize(_.cond {
 M.is = setmetatable({}, {
     __index = function(__, key)
         local os, arch, env = unpack(vim.split(key, "_", { plain = true }))
+        
+        -- Special case for FreeBSD with linuxlator
+        if os == "linux" and uname.sysname == "FreeBSD" and is_linuxlator_working() then
+            if arch and arch ~= M.arch then
+                return false
+            end
+            if env and not check_env(env) then
+                return false
+            end
+            return true
+        end
+        
         if not M.cached_features[os] or M.cached_features[os] ~= 1 then
             return false
         end
@@ -126,6 +171,11 @@ local function get_by_platform(platform_table)
         return platform_table.darwin or platform_table.mac or platform_table.unix
     elseif M.is.linux then
         return platform_table.linux or platform_table.unix
+    elseif M.is.freebsd and is_linuxlator_working() then
+        -- If FreeBSD with linuxlator, allow Linux packages
+        return platform_table.linux or platform_table.freebsd or platform_table.unix
+    elseif M.is.freebsd then
+        return platform_table.freebsd or platform_table.unix
     elseif M.is.unix then
         return platform_table.unix
     elseif M.is.win then
@@ -175,6 +225,17 @@ M.os_distribution = _.lazy(function()
             version = { major = major },
         }
     end
+    
+    ---@param freebsd_version string
+    local function parse_freebsd_version(freebsd_version)
+        -- Parse FreeBSD version string (e.g. "13.2-RELEASE")
+        local major, minor = freebsd_version:match("(%d+)%.(%d+)")
+        return {
+            id = "freebsd",
+            version_id = major .. "." .. minor,
+            version = { major = tonumber(major), minor = tonumber(minor) },
+        }
+    end
 
     ---Parses the provided contents of an /etc/*-release file and identifies the Linux distribution.
     local parse_linux_dist = _.cond {
@@ -193,6 +254,21 @@ M.os_distribution = _.lazy(function()
                     return { id = "linux-generic", version = {} }
                 end)
                 :get_or_throw()
+        end,
+        freebsd = function()
+            -- Detect FreeBSD version
+            local ok, output = system { "freebsd-version" }
+            if ok then
+                return parse_freebsd_version(vim.trim(output))
+            end
+            
+            -- Fallback if freebsd-version isn't available
+            ok, output = system { "uname", "-r" }
+            if ok then
+                return parse_freebsd_version(vim.trim(output))
+            end
+            
+            return { id = "freebsd", version = {} }
         end,
         darwin = function()
             return { id = "macOS", version = {} }
