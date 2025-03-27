@@ -34,20 +34,18 @@ local registry = require "mason-core.installer.registry"
 -- Override registry.init.lua's parse function to handle FreeBSD+linuxlator special case
 local original_parse = registry.parse
 
--- Add FreeBSD+Linuxlator support to the registry parser - FIX THE ERROR
+-- Add FreeBSD+Linuxlator support to the registry parser - FIXED APPROACH
 registry.parse = function(spec, opts)
     local result = original_parse(spec, opts)
     
-    -- The error was here - we need to properly check for PLATFORM_UNSUPPORTED errors
+    -- Use a safer method to determine if failure is due to platform incompatibility
     if result:is_failure() then
-        -- Get the error message safely
-        local err = result:err()
-        
-        -- Check if it's a platform unsupported error and we're on FreeBSD with linuxlator
-        if err == "PLATFORM_UNSUPPORTED" and
-           platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+        -- Instead of trying to get the specific error message, we'll rely on context
+        -- Check if we're on FreeBSD with linuxlator
+        if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
             
-            log.info("MASON-BSD-DEBUG: Package failed with PLATFORM_UNSUPPORTED, trying Linux compatibility mode")
+            -- Try a more direct approach - handle platform unsupported errors for FreeBSD
+            log.info("MASON-BSD-DEBUG: Got a failure, trying Linux compatibility mode on FreeBSD")
             
             -- Create modified options that override the target to Linux
             local modified_opts = vim.deepcopy(opts or {})

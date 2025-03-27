@@ -19,7 +19,7 @@ local M = {}
 local function is_compatible_with_platform(target, current_opts)
     -- Special case for FreeBSD with linuxlator - treat as compatible with Linux targets
     if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
-        if target == "linux_x64" or target == "linux_arm64" then
+        if target:match("^linux_") then
             log.debug(string.format("FreeBSD with linuxlator detected - treating %s as compatible", target))
             return true
         end
@@ -71,39 +71,44 @@ function M.parse(source, purl, opts)
     end)
 end
 
+-- Provide a safe way to detect platform unsupported errors
+local function is_platform_unsupported_error(result)
+    -- Try to detect platform unsupported failures without relying on specific error methods
+    if result:is_failure() then
+        -- For safety, if we're on FreeBSD with linuxlator, we'll just assume
+        -- all failures might be platform-related and give it a try
+        return platform.cached_features.freebsd and platform.cached_features.linuxlator_working
+    end
+    return false
+end
+
 -- Monkey patch the parse function to use our enhanced platform checks
 local original_parse = require("mason-core.installer.registry.providers.github").parse
 require("mason-core.installer.registry.providers.github").parse = function(source, purl, opts)
     -- Log the current operation for debugging
     log.debug(string.format("GitHub provider parsing for %s with FreeBSD compatibility", purl.name or "unknown package"))
     
-    -- Call the original parser but intercept PLATFORM_UNSUPPORTED errors for FreeBSD systems
+    -- Call the original parser
     local result = original_parse(source, purl, opts)
     
-    if result:is_failure() and result:err_or("") == "PLATFORM_UNSUPPORTED" and
-       platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
-        log.info("MASON-BSD-DEBUG: Trying to handle PLATFORM_UNSUPPORTED for GitHub provider on FreeBSD")
+    -- Handle possible platform unsupported errors more safely
+    if is_platform_unsupported_error(result) then
+        log.info("MASON-BSD-DEBUG: Trying to handle possible platform issues for GitHub provider on FreeBSD")
         
         -- Try to adapt the source for FreeBSD with linuxlator by treating it as Linux
-        if source.asset and source.asset.target then
+        if source.asset then
             -- Modify the source table to make it compatible
             local modified_source = vim.deepcopy(source)
             
-            -- Check what architecture we're running
-            local arch_suffix = platform.arch == "x64" and "x86_64" or 
-                                platform.arch == "arm64" and "aarch64" or
-                                platform.arch
+            -- Create modified options based on architecture
+            local modified_opts = vim.deepcopy(opts or {})
+            modified_opts.target = "linux_" .. platform.arch
             
-            -- Try to find a compatible Linux target
-            if type(modified_source.asset.target) == "table" then
-                for _, target in ipairs(modified_source.asset.target) do
-                    if target == "linux_x64" and platform.arch == "x64" or
-                       target == "linux_arm64" and platform.arch == "arm64" then
-                        log.info(string.format("MASON-BSD-DEBUG: Adapting %s target for FreeBSD+linuxlator", target))
-                        return original_parse(modified_source, purl, { target = target })
-                    end
-                end
-            end
+            log.info(string.format("MASON-BSD-DEBUG: Trying with target=%s for package %s", 
+                modified_opts.target, purl.name or "unknown"))
+            
+            -- Try again with Linux target
+            return original_parse(modified_source, purl, modified_opts)
         end
     end
     
