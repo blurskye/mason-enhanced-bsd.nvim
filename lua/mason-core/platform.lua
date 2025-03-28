@@ -38,6 +38,14 @@ M.sysname = uname.sysname
 
 M.is_headless = #vim.api.nvim_list_uis() == 0
 
+-- CRITICAL: Initialize M.is immediately to avoid nil reference errors
+M.is = setmetatable({}, {
+    __index = function(__, key)
+        -- Default behavior - will be enhanced later
+        return false
+    end,
+})
+
 -- At the beginning of the file, add a debug print for the detected architecture
 print("\n======== MASON-BSD-DEBUG: DETECTED ARCHITECTURE ========")
 print("Machine: " .. machine)
