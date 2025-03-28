@@ -20,11 +20,11 @@ function M.coalesce_by_target(source, opts)
     if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
         log.debug("MASON-BSD-DEBUG: Force targeting Linux on FreeBSD+linuxlator in coalesce_by_target")
         
-        -- Force Linux target for FreeBSD with linuxlator
+        -- Force Linux target for FreeBSD with linuxlator - STRICT ARCH MATCHING
         opts = opts or {}
         if not opts.target then
             opts.target = "linux_" .. platform.arch
-            log.info("MASON-BSD-DEBUG: Setting target to " .. opts.target)
+            log.info("MASON-BSD-DEBUG: Setting target to " .. opts.target .. " - enforcing correct architecture")
         end
     end
 
@@ -50,16 +50,37 @@ function M.coalesce_by_target(source, opts)
             for i = 1, #source_target do
                 local t = source_target[i]
                 if t == target then
+                    -- STRICT ARCHITECTURE CHECK
+                    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+                        local target_arch = t:match("_(%w+)")
+                        if target_arch and target_arch ~= platform.arch then
+                            log.warn("MASON-BSD-DEBUG: Rejecting architecture mismatch - target has " .. 
+                                    target_arch .. " but system is " .. platform.arch)
+                            return false
+                        end
+                    end
                     return true
                 end
             end
             return false
         else
-            -- Special case for FreeBSD with linuxlator - accept Linux targets
+            -- Special case for FreeBSD with linuxlator - accept Linux targets WITH SAME ARCH
             if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
                 if source_target:match("^linux_") and target:match("^linux_") then
-                    log.info("MASON-BSD-DEBUG: Accepting Linux target on FreeBSD with linuxlator")
-                    return true
+                    -- Extract arch from source_target and target
+                    local source_arch = source_target:match("_(%w+)")
+                    local target_arch = target:match("_(%w+)")
+                    
+                    -- Only accept if architectures match
+                    if source_arch == target_arch then
+                        log.info("MASON-BSD-DEBUG: Accepting Linux target on FreeBSD with linuxlator: " .. 
+                                source_target .. " matches " .. target)
+                        return true
+                    else
+                        log.warn("MASON-BSD-DEBUG: Rejecting architecture mismatch: " .. 
+                                source_target .. " vs " .. target)
+                        return false
+                    end
                 end
             end
             
@@ -71,18 +92,40 @@ function M.coalesce_by_target(source, opts)
         for i = 1, #source do
             local result = get_coalesce_by_target(source[i], predicate)
             if result ~= nil then
+                -- Verify we're not accepting wrong architecture
+                if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+                    local source_target = source[i].target
+                    if type(source_target) == "string" then
+                        local source_arch = source_target:match("_(%w+)")
+                        if source_arch and source_arch ~= platform.arch then
+                            log.warn("MASON-BSD-DEBUG: Skipping wrong architecture: " .. source_target)
+                            goto continue
+                        end
+                    end
+                end
                 return Result.success(result)
+                ::continue::
             end
         end
+        
         -- DIRECT OVERRIDE: Don't return PLATFORM_UNSUPPORTED on FreeBSD with linuxlator
         if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
-            -- Try again with Linux target
-            log.info("MASON-BSD-DEBUG: No target match found, forcing Linux compatibility")
+            -- Try again with Linux target - STRICT ARCH MATCHING
+            log.info("MASON-BSD-DEBUG: No target match found, forcing Linux compatibility with arch " .. platform.arch)
             target = "linux_" .. platform.arch
             for i = 1, #source do
-                -- Accept any source for FreeBSD+linuxlator since we want to force compatibility
-                if source[i] and type(source[i]) == "table" then
-                    return Result.success(source[i])
+                -- Accept sources but only if architecture matches
+                if source[i] and type(source[i]) == "table" and source[i].target then
+                    local source_target = source[i].target
+                    if type(source_target) == "string" then
+                        local source_arch = source_target:match("_(%w+)")
+                        if source_arch == platform.arch then
+                            log.info("MASON-BSD-DEBUG: Found compatible target: " .. source_target)
+                            return Result.success(source[i])
+                        else
+                            log.warn("MASON-BSD-DEBUG: Skipping incompatible architecture: " .. source_target)
+                        end
+                    end
                 end
             end
         end

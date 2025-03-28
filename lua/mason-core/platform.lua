@@ -38,6 +38,12 @@ M.sysname = uname.sysname
 
 M.is_headless = #vim.api.nvim_list_uis() == 0
 
+-- At the beginning of the file, add a debug print for the detected architecture
+print("\n======== MASON-BSD-DEBUG: DETECTED ARCHITECTURE ========")
+print("Machine: " .. machine)
+print("Normalized arch: " .. (arch_aliases[machine] or machine))
+print("====================================================\n")
+
 -----------------------------------------------------------------------
 -- Helper functions
 -----------------------------------------------------------------------
@@ -237,6 +243,18 @@ if M.cached_features.freebsd and M.cached_features.linuxlator_working then
     print("LINUX PACKAGES WILL BE SUPPORTED ON THIS FREEBSD SYSTEM")
     print("NATIVE BSD PACKAGES WILL BE PREFERRED WHEN AVAILABLE")
     print("================================================================\n")
+    
+    -- IMPORTANT: Add this debug message to verify the architecture
+    print("\n======== MASON-BSD-DEBUG: ARCH CHECK ========")
+    print("Architecture detected: " .. M.arch)
+    print("This should be 'x64' for x86_64 systems")
+    print("Current platform.is entries:")
+    for k, v in pairs(M.is) do
+        if type(v) == "boolean" and v then
+            print("  - " .. k .. " = " .. tostring(v))
+        end
+    end
+    print("=======================================\n")
 elseif M.cached_features.freebsd then
     print("\n======== MASON-BSD-DEBUG: FreeBSD without working linuxlator detected ========")
     print("ONLY NATIVE BSD PACKAGES WILL BE SUPPORTED ON THIS SYSTEM")
@@ -319,24 +337,33 @@ if M.cached_features.freebsd and M.cached_features.linuxlator_working then
     -- Create direct global override - this is a heavy hammer but will ensure compatibility
     print("\n======== MASON-BSD-DEBUG: APPLYING DIRECT PLATFORM OVERRIDE ========")
     
-    -- Create and apply direct platform compatibility overrides
-    local linux_targets = {
-        "linux", "linux_x64", "linux_arm64", "linux_x86",
-        "linux_x64_gnu", "linux_x64_musl", "linux_arm64_gnu", "linux_arm64_musl"
-    }
+    -- STRICT ARCHITECTURE ENFORCEMENT: Only add entries for the current architecture!
+    local current_arch = M.arch -- This should be "x64" on x86_64 systems
+    print("Current architecture: " .. current_arch)
     
-    -- Force all Linux targets to be true directly
-    for _, target in ipairs(linux_targets) do
-        -- We use rawset to avoid the metatable __index function
-        -- This ensures we're not causing an infinite loop
-        if target:match("^linux") then
-            -- Filter by architecture
-            local target_arch = target:match("_(%w+)")
-            if not target_arch or target_arch == M.arch then
-                print("MASON-BSD-DEBUG: Forcing compatibility with " .. target)
-                rawset(M.is, target, true)
-            end
-        end
+    -- Force all Linux targets to be true ONLY for current architecture
+    if current_arch == "x64" then
+        print("MASON-BSD-DEBUG: Enforcing x64-only compatibility")
+        rawset(M.is, "linux", true)
+        rawset(M.is, "linux_x64", true)
+        rawset(M.is, "linux_x64_gnu", true)
+        rawset(M.is, "linux_x64_musl", true)
+        -- EXPLICITLY DISABLE ARM64 TARGETS
+        rawset(M.is, "linux_arm64", false)
+        rawset(M.is, "linux_arm64_gnu", false)
+        rawset(M.is, "linux_arm64_musl", false)
+    elseif current_arch == "arm64" then
+        print("MASON-BSD-DEBUG: Enforcing arm64-only compatibility")
+        rawset(M.is, "linux", true)
+        rawset(M.is, "linux_arm64", true)
+        rawset(M.is, "linux_arm64_gnu", true)
+        rawset(M.is, "linux_arm64_musl", true)
+        -- EXPLICITLY DISABLE X64 TARGETS
+        rawset(M.is, "linux_x64", false)
+        rawset(M.is, "linux_x64_gnu", false)
+        rawset(M.is, "linux_x64_musl", false)
+    else
+        print("MASON-BSD-DEBUG: Unknown architecture: " .. current_arch)
     end
     
     print("MASON-BSD-DEBUG: FreeBSD+linuxlator direct platform patching complete")

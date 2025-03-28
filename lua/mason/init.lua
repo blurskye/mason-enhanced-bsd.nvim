@@ -7,6 +7,7 @@ local settings = require "mason.settings"
 if platform.cached_features and platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
     -- Apply direct platform patches to force Linux compatibility
     print("\n=== MASON-BSD-DEBUG: APPLYING CRITICAL COMPATIBILITY PATCHES ===\n")
+    print("Architecture: " .. platform.arch)
     
     -- Force FreeBSD to be recognized as Linux-compatible
     platform.cached_features.linux = true
@@ -15,11 +16,17 @@ if platform.cached_features and platform.cached_features.freebsd and platform.ca
     vim.schedule(function()
         -- By this time platform.is should be initialized
         if platform.is then
-            -- Create direct overrides for platform.is
+            -- Create direct overrides for platform.is - STRICT ARCH ENFORCEMENT
             platform.is.linux = true
-            platform.is.linux_x64 = platform.arch == "x64"
-            platform.is.linux_arm64 = platform.arch == "arm64"
-            platform.is.linux_x86 = platform.arch == "x86"
+            
+            -- Only set architecture flags that match the current system
+            if platform.arch == "x64" then
+                platform.is.linux_x64 = true
+                platform.is.linux_arm64 = false  -- Explicitly disable ARM
+            elseif platform.arch == "arm64" then
+                platform.is.linux_arm64 = true
+                platform.is.linux_x64 = false    -- Explicitly disable x64
+            end
             
             -- Override platform detection directly
             package.loaded["mason-core.installer.registry.platform_override"] = nil
@@ -35,9 +42,10 @@ if platform.cached_features and platform.cached_features.freebsd and platform.ca
             
             -- Override with our aggressive version that always accepts Linux targets
             util.coalesce_by_target = function(source, opts)
-                -- Always force Linux target for FreeBSD+linuxlator
+                -- Always force Linux target for FreeBSD+linuxlator WITH CORRECT ARCHITECTURE
                 opts = opts or {}
                 opts.target = "linux_" .. platform.arch
+                log.info("MASON-BSD-DEBUG: Setting target to " .. opts.target .. " - enforcing architecture match")
                 
                 -- If the original function fails, we'll force success anyway
                 local result = util._original_coalesce_by_target(source, opts)
