@@ -7,6 +7,13 @@ local link = require "mason-core.installer.registry.link"
 local log = require "mason-core.log"
 local schemas = require "mason-core.installer.registry.schemas"
 local util = require "mason-core.installer.registry.util"
+local platform = require "mason-core.platform"
+
+-- Load our platform override early
+if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+    require "mason-core.installer.registry.platform_override"
+    log.debug("FreeBSD: Loaded platform override for FreeBSD with linuxlator")
+end
 
 local M = {}
 
@@ -107,6 +114,14 @@ end
 ---@param spec RegistryPackageSpec
 ---@param opts PackageInstallOpts
 function M.parse(spec, opts)
+    -- Special handling for FreeBSD with linuxlator
+    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working and not opts.target then
+        -- Force Linux target for FreeBSD+linuxlator
+        log.debug("FreeBSD: Forcing Linux target for FreeBSD+linuxlator in registry parse")
+        opts = opts or {}
+        opts.target = "linux_" .. platform.arch
+    end
+
     log.trace("Parsing spec", spec.name, opts)
     return Result.try(function(try)
         if not M.SCHEMA_CAP[spec.schema] then
@@ -146,6 +161,13 @@ end
 ---@param spec RegistryPackageSpec
 ---@param opts PackageInstallOpts
 function M.compile(spec, opts)
+    -- Special handling for FreeBSD with linuxlator
+    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working and not opts.target then
+        log.debug("FreeBSD: Forcing Linux target for FreeBSD+linuxlator in compile")
+        opts = opts or {}
+        opts.target = "linux_" .. platform.arch
+    end
+
     log.debug("Compiling installer.", spec.name, opts)
     return Result.try(function(try)
         -- Parsers run synchronously and may access API functions, so we schedule before-hand.

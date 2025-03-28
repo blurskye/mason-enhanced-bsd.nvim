@@ -5,6 +5,8 @@ local expr = require "mason-core.installer.registry.expr"
 local providers = require "mason-core.providers"
 local settings = require "mason.settings"
 local util = require "mason-core.installer.registry.util"
+local platform = require "mason-core.platform"
+local log = require "mason-core.log"
 
 ---@class GitHubReleaseSource : RegistryPackageSource
 ---@field asset FileDownloadSpec | FileDownloadSpec[]
@@ -15,6 +17,13 @@ local M = {}
 ---@param purl Purl
 ---@param opts PackageInstallOpts
 function M.parse(source, purl, opts)
+    -- Ensure we have the right target on FreeBSD+linuxlator
+    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working and not opts.target then
+        opts = opts or {}
+        opts.target = "linux_" .. platform.arch
+        log.debug("FreeBSD: Setting GitHub release target to " .. opts.target)
+    end
+
     return Result.try(function(try)
         local expr_ctx = { version = purl.version }
         ---@type FileDownloadSpec
@@ -35,6 +44,18 @@ function M.parse(source, purl, opts)
             downloads = downloads,
         }
         return parsed_source
+    end):on_failure(function(err)
+        -- Special handling for platform unsupported errors on FreeBSD with linuxlator
+        if err == "PLATFORM_UNSUPPORTED" and platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+            log.debug("FreeBSD: Attempting Linux compatibility fallback for GitHub release")
+            
+            -- Try again with explicit Linux target
+            opts = opts or {}
+            opts.target = "linux_" .. platform.arch
+            
+            return M.parse(source, purl, opts)
+        end
+        return err
     end)
 end
 

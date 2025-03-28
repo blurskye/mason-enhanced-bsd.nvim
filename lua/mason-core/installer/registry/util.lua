@@ -12,16 +12,48 @@ local M = {}
 ---@param opts PackageInstallOpts
 ---@return Result # Result<T>
 function M.coalesce_by_target(candidates, opts)
+    -- Special handling for FreeBSD with linuxlator
+    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+        if not opts.target then
+            opts = opts or {}
+            opts.target = "linux_" .. platform.arch
+            log.debug("FreeBSD: Setting target to " .. opts.target .. " in coalesce_by_target")
+        end
+    end
+
     if not _.is_list(candidates) then
         return Result.success(candidates)
     end
+
     return Optional.of_nilable(_.find_first(function(asset)
         if opts.target then
             -- Matching against a provided target rather than the current platform is an escape hatch primarily meant
             -- for automated testing purposes.
             if type(asset.target) == "table" then
+                -- Special case for FreeBSD with linuxlator - accept Linux targets
+                if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+                    for _, target in ipairs(asset.target) do
+                        if target:match("^linux_") and opts.target:match("^linux_") then
+                            local target_arch = target:match("_(%w+)")
+                            if not target_arch or target_arch == platform.arch then
+                                log.debug("FreeBSD: Accepting Linux target: " .. target)
+                                return true
+                            end
+                        end
+                    end
+                end
                 return _.any(_.equals(opts.target), asset.target)
             else
+                -- Special case for FreeBSD with linuxlator - accept Linux targets
+                if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+                    if asset.target:match("^linux_") and opts.target:match("^linux_") then
+                        local target_arch = asset.target:match("_(%w+)")
+                        if not target_arch or target_arch == platform.arch then
+                            log.debug("FreeBSD: Accepting Linux target: " .. asset.target)
+                            return true
+                        end
+                    end
+                end
                 return asset.target == opts.target
             end
         else
