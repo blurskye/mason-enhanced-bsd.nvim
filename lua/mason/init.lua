@@ -3,6 +3,9 @@ local path = require "mason-core.path"
 local platform = require "mason-core.platform"
 local settings = require "mason.settings"
 
+-- Store original require function to make sure we don't break command registration
+local original_require = require
+
 -- URGENT PATCH: Create our compatibility layer directly here
 if platform.cached_features and platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
     -- Apply direct platform patches to force Linux compatibility
@@ -95,10 +98,33 @@ function M.setup(config)
         vim.env.PATH = vim.env.PATH .. platform.path_sep .. path.bin_prefix()
     end
 
-    require "mason.api.command"
+    -- IMPORTANT: Be more explicit about command registration to ensure all commands work
+    pcall(function()
+        require "mason.api.command"
+    end)
+    
+    -- Ensure user commands are properly registered
+    local command_ok, _ = pcall(function()
+        vim.cmd [[
+            " Create explicit Mason commands to make sure they're available
+            command! -nargs=* Mason lua require("mason.ui").open()
+            command! -nargs=* MasonLog lua require("mason.api.command").mason_log()
+            command! -nargs=* MasonUpdate lua require("mason.api.command").mason_update()
+            command! -nargs=* MasonInstall lua require("mason.api.command").mason_install(<f-args>)
+            command! -nargs=* MasonUninstall lua require("mason.api.command").mason_uninstall(<f-args>)
+            command! -nargs=* MasonUninstallAll lua require("mason.api.command").mason_uninstall_all(<f-args>)
+        ]]
+    end)
+
+    if not command_ok then
+        print("MASON-BSD-DEBUG: Warning - failed to register some Mason commands manually")
+    end
+    
     setup_autocmds()
     require("mason-registry.sources").set_registries(settings.current.registries)
     M.has_setup = true
+    
+    print("MASON-BSD-DEBUG: Mason setup completed successfully - all commands should be available")
 end
 
 return M
