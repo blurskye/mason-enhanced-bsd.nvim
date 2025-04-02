@@ -1,30 +1,28 @@
 local _ = require "mason-core.functional"
 local log = require "mason-core.log"
 
+--[[
+  ███╗   ███╗ █████╗ ███████╗ ██████╗ ███╗   ██╗      ██████╗ ███████╗██████╗ 
+  ████╗ ████║██╔══██╗██╔════╝██╔═══██╗████╗  ██║      ██╔══██╗██╔════╝██╔══██╗
+  ██╔████╔██║███████║███████╗██║   ██║██╔██╗ ██║█████╗██████╔╝███████╗██║  ██║
+  ██║╚██╔╝██║██╔══██║╚════██║██║   ██║██║╚██╗██║╚════╝██╔══██╗╚════██║██║  ██║
+  ██║ ╚═╝ ██║██║  ██║███████║╚██████╔╝██║ ╚████║      ██████╔╝███████║██████╔╝
+  ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═══╝      ╚═════╝ ╚══════╝╚═════╝ 
+                                                                             
+  FreeBSD Enhanced Support with Linuxlator Detection
+]]
+
 local M = {}
 
+-----------------------------------------------------------------------
+-- Platform detection fundamentals
+-----------------------------------------------------------------------
+
+-- Get system information
 local uname = vim.loop.os_uname()
+local machine = uname.machine
 
----@alias Platform
----| '"darwin_arm64"'
----| '"darwin_x64"'
----| '"linux_arm"'
----| '"linux_arm64"'
----| '"linux_arm64_gnu"'
----| '"linux_arm64_openbsd"'
----| '"linux_arm_gnu"'
----| '"linux_x64"'
----| '"linux_x64_gnu"'
----| '"linux_x64_openbsd"'
----| '"linux_x86"'
----| '"linux_x86_gnu"'
----| '"freebsd_x64"'
----| '"freebsd_arm64"'
----| '"win_arm"'
----| '"win_arm64"'
----| '"win_x64"'
----| '"win_x86"'
-
+-- Architecture normalization
 local arch_aliases = {
     ["x86_64"] = "x64",
     ["i386"] = "x86",
@@ -35,11 +33,16 @@ local arch_aliases = {
     ["armv8l"] = "arm64", -- arm64 compat
 }
 
-M.arch = arch_aliases[uname.machine] or uname.machine
+M.arch = arch_aliases[machine] or machine
 M.sysname = uname.sysname
 
 M.is_headless = #vim.api.nvim_list_uis() == 0
 
+-----------------------------------------------------------------------
+-- Helper functions
+-----------------------------------------------------------------------
+
+-- Safe system command execution
 local function system(args)
     if vim.fn.executable(args[1]) == 1 then
         local ok, output = pcall(vim.fn.system, args)
@@ -51,10 +54,14 @@ local function system(args)
     return false, args[1] .. " is not executable"
 end
 
--- Check if directory exists
+-- File and directory existence checks
 local function dir_exists(path)
     return vim.fn.isdirectory(path) == 1
 end
+
+-----------------------------------------------------------------------
+-- BSD-specific detection with debug output
+-----------------------------------------------------------------------
 
 -- Check if linuxlator is available and working on FreeBSD
 ---@type fun(): {available: boolean, working: boolean, version: string?}
@@ -63,19 +70,38 @@ local get_linuxlator_status = _.lazy(function()
         return { available = false, working = false }
     end
 
+    -- Debug banner that's easy to spot and remove
+    print("\n======== MASON-BSD-DEBUG: CHECKING LINUXLATOR STATUS ========\n")
+    
     local status = { 
         available = false, 
         working = false, 
         version = nil 
     }
     
+    -- Check if Linux kernel module is loaded
+    local linux_ko_loaded = false
+    local kldstat_ok, kldstat_output = system { "kldstat" }
+    if kldstat_ok then
+        if kldstat_output:match("linux64%.ko") then
+            linux_ko_loaded = true
+            print("MASON-BSD-DEBUG: linux64.ko module detected")
+        elseif kldstat_output:match("linux%.ko") then
+            linux_ko_loaded = true
+            print("MASON-BSD-DEBUG: linux.ko module detected")
+        else
+            print("MASON-BSD-DEBUG: No Linux kernel module detected")
+        end
+    end
+    
     -- Check if Linux compatibility layer exists
     local linux_root_path = "/compat/linux"
     local linux_compat_exists = dir_exists(linux_root_path)
     if linux_compat_exists then
-        log.debug("FreeBSD: Linux compatibility layer found at " .. linux_root_path)
+        print("MASON-BSD-DEBUG: Linux compatibility layer found at " .. linux_root_path)
         status.available = true
     else
+        print("MASON-BSD-DEBUG: Linux compatibility layer not found at " .. linux_root_path)
         return status
     end
     
@@ -88,17 +114,23 @@ local get_linuxlator_status = _.lazy(function()
             if os_release:match("CentOS") or os_release:match("AlmaLinux") or os_release:match("Rocky Linux") then
                 if os_release:match("VERSION=\"9") or os_release:match("VERSION_ID=\"9") then
                     status.version = "el9"
+                    print("MASON-BSD-DEBUG: Linuxlator using CentOS/RHEL 9 (el9)")
                 elseif os_release:match("VERSION=\"8") or os_release:match("VERSION_ID=\"8") then
                     status.version = "el8"
+                    print("MASON-BSD-DEBUG: Linuxlator using CentOS/RHEL 8 (el8)")
                 elseif os_release:match("VERSION=\"7") or os_release:match("VERSION_ID=\"7") then
                     status.version = "el7"
+                    print("MASON-BSD-DEBUG: Linuxlator using CentOS/RHEL 7 (el7)")
                 end
             elseif os_release:match("Ubuntu") then
                 status.version = "ubuntu"
+                print("MASON-BSD-DEBUG: Linuxlator using Ubuntu")
             elseif os_release:match("Debian") then
                 status.version = "debian"
+                print("MASON-BSD-DEBUG: Linuxlator using Debian")
             else
                 status.version = "unknown-linux"
+                print("MASON-BSD-DEBUG: Linuxlator using unknown Linux distribution")
             end
         end
     end
@@ -113,17 +145,27 @@ local get_linuxlator_status = _.lazy(function()
         local test_ok, _ = system { binary_path }
         if test_ok then
             status.working = true
-            log.debug("FreeBSD: Linuxlator is working - verified with " .. binary_path)
+            print("MASON-BSD-DEBUG: Linuxlator is WORKING - verified by running " .. binary_path)
             break
         end
     end
     
     if not status.working then
-        log.debug("FreeBSD: Linuxlator is installed but not working")
+        print("MASON-BSD-DEBUG: Linuxlator is installed but NOT WORKING")
     end
+    
+    print("\n======== MASON-BSD-DEBUG: LINUXLATOR STATUS SUMMARY ========")
+    print("Available: " .. tostring(status.available))
+    print("Working:   " .. tostring(status.working))
+    print("Version:   " .. (status.version or "unknown"))
+    print("==========================================================\n")
     
     return status
 end)
+
+-----------------------------------------------------------------------
+-- libc detection
+-----------------------------------------------------------------------
 
 ---@type fun(): ('"glibc"' | '"musl"' | '"freebsd"')?
 local get_libc = _.lazy(function()
@@ -132,6 +174,7 @@ local get_libc = _.lazy(function()
         return "freebsd"
     end
     
+    -- Standard Linux libc detection
     local getconf_ok, getconf_output = system { "getconf", "GNU_LIBC_VERSION" }
     if getconf_ok and getconf_output:find "glibc" then
         return "glibc"
@@ -145,20 +188,23 @@ local get_libc = _.lazy(function()
             return "glibc"
         end
     end
+    
+    return nil
 end)
+
+-----------------------------------------------------------------------
+-- Platform feature caching
+-----------------------------------------------------------------------
 
 -- Get linuxlator status once for FreeBSD
 local linuxlator_status = { available = false, working = false, version = nil }
 if uname.sysname == "FreeBSD" then
     linuxlator_status = get_linuxlator_status()
-    if linuxlator_status.working then
-        log.info("FreeBSD: Linuxlator is available and working")
-    end
 end
 
--- Most of the code that calls into these functions executes outside of the main event loop, where API/fn functions are
--- disabled. We evaluate these immediately here to avoid issues with main loop synchronization.
+-- Cache features to avoid expensive checks
 M.cached_features = {
+    -- OS detection
     ["win"] = vim.fn.has "win32" == 1,
     ["win32"] = vim.fn.has "win32" == 1,
     ["win64"] = vim.fn.has "win64" == 1,
@@ -166,7 +212,6 @@ M.cached_features = {
     ["darwin"] = vim.fn.has "mac" == 1,
     ["unix"] = vim.fn.has "unix" == 1,
     ["linux"] = vim.fn.has "linux" == 1,
-    ["nvim-0.11"] = vim.fn.has "nvim-0.11" == 1,
     
     -- BSD family detection
     ["freebsd"] = uname.sysname == "FreeBSD",
@@ -178,14 +223,30 @@ M.cached_features = {
     ["linuxlator_available"] = linuxlator_status.available,
     ["linuxlator_working"] = linuxlator_status.working,
     ["linuxlator_version"] = linuxlator_status.version,
+    
+    -- Neovim version detection
+    ["nvim-0.11"] = vim.fn.has "nvim-0.11" == 1,
 }
 
 -- When on FreeBSD with working linuxlator, enable Linux compatibility
 if M.cached_features.freebsd and M.cached_features.linuxlator_working then
-    -- Enable Linux compatibility for FreeBSD with linuxlator
+    -- Force Linux compatibility for FreeBSD with linuxlator
     M.cached_features.linux = true
-    log.info("FreeBSD: Enabling Linux compatibility via linuxlator")
+    
+    print("\n======== MASON-BSD-DEBUG: FreeBSD with working linuxlator detected ========")
+    print("LINUX PACKAGES WILL BE SUPPORTED ON THIS FREEBSD SYSTEM")
+    print("NATIVE BSD PACKAGES WILL BE PREFERRED WHEN AVAILABLE")
+    print("================================================================\n")
+elseif M.cached_features.freebsd then
+    print("\n======== MASON-BSD-DEBUG: FreeBSD without working linuxlator detected ========")
+    print("ONLY NATIVE BSD PACKAGES WILL BE SUPPORTED ON THIS SYSTEM")
+    print("INSTALL LINUXLATOR FOR BROADER PACKAGE SUPPORT")
+    print("===================================================================\n")
 end
+
+-----------------------------------------------------------------------
+-- Platform targeting
+-----------------------------------------------------------------------
 
 ---@type fun(env: string): boolean
 local check_env = _.memoize(_.cond {
@@ -218,13 +279,14 @@ M.is = setmetatable({}, {
     __index = function(__, key)
         local os, arch, env = unpack(vim.split(key, "_", { plain = true }))
         
-        -- Special case: FreeBSD with linuxlator - allow Linux targets
+        -- Special case: FreeBSD with linuxlator - ALWAYS allow Linux targets
+        -- regardless of the specific error or context
         if os == "linux" and M.cached_features.freebsd and M.cached_features.linuxlator_working then
             if arch and arch ~= M.arch then
                 return false
             end
-            -- For Linux targets on FreeBSD with linuxlator, we're compatible
-            log.debug("FreeBSD: Allowing Linux target: " .. key)
+            -- For Linux targets on FreeBSD with linuxlator, we're always compatible
+            log.debug("MASON-BSD-DEBUG: FreeBSD with linuxlator allowing Linux target: " .. key)
             return true
         end
         
@@ -233,10 +295,11 @@ M.is = setmetatable({}, {
             if arch and arch ~= M.arch then
                 return false
             end
+            -- For FreeBSD targets on FreeBSD, we're always compatible
             return true
         end
         
-        -- Normal platform check
+        -- Normal platform check for all other cases
         if not M.cached_features[os] or M.cached_features[os] ~= true then
             return false
         end
@@ -251,6 +314,39 @@ M.is = setmetatable({}, {
     end,
 })
 
+-- ONLY NOW that M.is exists, we can apply direct overrides
+if M.cached_features.freebsd and M.cached_features.linuxlator_working then
+    -- Create direct global override - this is a heavy hammer but will ensure compatibility
+    print("\n======== MASON-BSD-DEBUG: APPLYING DIRECT PLATFORM OVERRIDE ========")
+    
+    -- Create and apply direct platform compatibility overrides
+    local linux_targets = {
+        "linux", "linux_x64", "linux_arm64", "linux_x86",
+        "linux_x64_gnu", "linux_x64_musl", "linux_arm64_gnu", "linux_arm64_musl"
+    }
+    
+    -- Force all Linux targets to be true directly
+    for _, target in ipairs(linux_targets) do
+        -- We use rawset to avoid the metatable __index function
+        -- This ensures we're not causing an infinite loop
+        if target:match("^linux") then
+            -- Filter by architecture
+            local target_arch = target:match("_(%w+)")
+            if not target_arch or target_arch == M.arch then
+                print("MASON-BSD-DEBUG: Forcing compatibility with " .. target)
+                rawset(M.is, target, true)
+            end
+        end
+    end
+    
+    print("MASON-BSD-DEBUG: FreeBSD+linuxlator direct platform patching complete")
+    print("=========================================================")
+end
+
+-----------------------------------------------------------------------
+-- Platform selection for commands
+-----------------------------------------------------------------------
+
 ---@generic T
 ---@param platform_table table<Platform, T>
 ---@return T
@@ -260,26 +356,31 @@ local function get_by_platform(platform_table)
         -- First try native FreeBSD implementation
         if platform_table.freebsd then
             log.trace("Using native FreeBSD implementation")
+            print("MASON-BSD-DEBUG: Selected native FreeBSD implementation")
             return platform_table.freebsd
         end
         
         -- Fall back to Linux implementation via linuxlator
         if platform_table.linux then
             log.trace("Using Linux implementation via linuxlator")
+            print("MASON-BSD-DEBUG: Selected Linux implementation via linuxlator")
             return platform_table.linux
         end
         
         -- Last resort: generic Unix implementation
         if platform_table.unix then
+            print("MASON-BSD-DEBUG: Selected generic Unix implementation")
             return platform_table.unix
         end
     -- FreeBSD without linuxlator: only allow BSD or Unix implementations
     elseif M.cached_features.freebsd then
         if platform_table.freebsd then
+            print("MASON-BSD-DEBUG: Selected native FreeBSD implementation")
             return platform_table.freebsd
         end
         
         if platform_table.unix then
+            print("MASON-BSD-DEBUG: Selected generic Unix implementation")
             return platform_table.unix
         end
     -- macOS handling
@@ -307,6 +408,10 @@ function M.when(cases)
         error "Current platform is not supported."
     end
 end
+
+-----------------------------------------------------------------------
+-- OS distribution detection
+-----------------------------------------------------------------------
 
 ---@type async fun(): table
 M.os_distribution = _.lazy(function()
@@ -415,6 +520,10 @@ M.os_distribution = _.lazy(function()
         end,
     }
 end)
+
+-----------------------------------------------------------------------
+-- Utility functions
+-----------------------------------------------------------------------
 
 ---@type async fun(): Result<string>
 M.get_homebrew_prefix = _.lazy(function()

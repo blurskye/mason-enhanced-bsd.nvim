@@ -13,7 +13,7 @@ function M.is_supported_on_platform(target)
     if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
         -- Allow Linux targets on FreeBSD with linuxlator
         if target:match("^linux_") then
-            log.debug("FreeBSD: Allowing Linux target on FreeBSD with linuxlator: " .. target)
+            log.debug("MASON-BSD-DEBUG: Allowing Linux target on FreeBSD with linuxlator: " .. target)
             return true
         end
         
@@ -23,7 +23,7 @@ function M.is_supported_on_platform(target)
         end
     end
     
-    -- Call the original __index method directly to avoid recursion
+    -- IMPORTANT: Call the original __index method directly to avoid recursion
     return original_index(platform.is, target)
 end
 
@@ -36,7 +36,7 @@ getmetatable(platform.is).__index = function(t, key)
             local parts = vim.split(key, "_", { plain = true })
             local arch = parts[2]
             if not arch or arch == platform.arch then
-                log.debug("FreeBSD: Allowing Linux target on FreeBSD with linuxlator: " .. key)
+                log.debug("MASON-BSD-DEBUG: Allowing Linux target on FreeBSD with linuxlator: " .. key)
                 return true
             end
         end

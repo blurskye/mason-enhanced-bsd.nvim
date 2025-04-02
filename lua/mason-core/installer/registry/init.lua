@@ -12,7 +12,7 @@ local platform = require "mason-core.platform"
 -- Load our platform override early
 if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
     require "mason-core.installer.registry.platform_override"
-    log.debug("FreeBSD: Loaded platform override for FreeBSD with linuxlator")
+    log.debug("MASON-BSD-DEBUG: Loaded platform override for FreeBSD with linuxlator")
 end
 
 local M = {}
@@ -114,10 +114,10 @@ end
 ---@param spec RegistryPackageSpec
 ---@param opts PackageInstallOpts
 function M.parse(spec, opts)
-    -- Special handling for FreeBSD with linuxlator
+    -- DIRECT OVERRIDE: Immediately modify opts for FreeBSD+linuxlator before parsing
     if platform.cached_features.freebsd and platform.cached_features.linuxlator_working and not opts.target then
         -- Force Linux target for FreeBSD+linuxlator
-        log.debug("FreeBSD: Forcing Linux target for FreeBSD+linuxlator in registry parse")
+        log.info("MASON-BSD-DEBUG: Forcing Linux target for FreeBSD+linuxlator in registry parse")
         opts = opts or {}
         opts.target = "linux_" .. platform.arch
     end
@@ -161,9 +161,9 @@ end
 ---@param spec RegistryPackageSpec
 ---@param opts PackageInstallOpts
 function M.compile(spec, opts)
-    -- Special handling for FreeBSD with linuxlator
-    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working and not opts.target then
-        log.debug("FreeBSD: Forcing Linux target for FreeBSD+linuxlator in compile")
+    -- DIRECT OVERRIDE: Force Linux targets on FreeBSD with linuxlator
+    if platform.cached_features.freebsd and platform.cached_features.linuxlator_working then
+        log.info("MASON-BSD-DEBUG: Forcing Linux target for FreeBSD+linuxlator in compile")
         opts = opts or {}
         opts.target = "linux_" .. platform.arch
     end
